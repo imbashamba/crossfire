@@ -1,0 +1,325 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=windows-1251">
+		<title>The game</title>
+		<style>
+			
+		</style>
+	</head>
+	<body>
+		<canvas id="action_cvs" width="800" height="600"></canvas>
+	
+	<script type="text/javascript">
+	var g_PI2 = Math.PI*2;
+
+
+	//"Обойма" - объект, который испускает шарики
+	//принимает кол-во, частоту, канвас и координаты
+	function Charger(amount,freq,ctx,x,y){
+		this.ctx = ctx;
+		//массив пуль, вначале пустой
+		this.bullets = [];
+		this.freq = freq;
+		this.step = 0;
+		//разброс пуль
+		for (var i = 0; i<amount; i++){
+			var angle = Math.random()*(Math.PI/12);
+			if(Math.random()>=0.5)
+				angle = -angle;
+			var newBullet = new Bullet(ctx,x,y,angle);
+			this.bullets.push(newBullet);
+		}
+		this.firedBullets = [];
+	}
+
+	//выстрелить (кадр анимации всех пуль)
+	Charger.prototype.fire = function(){
+		//новый патрон
+		if(!(this.step%this.freq))
+		{
+			if(this.bullets.length)
+			{
+				this.firedBullets.push(this.bullets[0]);
+				this.bullets.splice(0,1);
+			}
+		}
+		//переместить старые патроны
+		for (var k in this.firedBullets)
+		{
+			var cur = this.firedBullets[k];
+			cur.draw();
+			cur.fly();
+			//если выходят за канвас - удаляем
+			if (cur.x > this.ctx.canvas.width || cur.y > this.ctx.canvas.height || cur.x < 0 || cur.y < 0)
+				delete this.firedBullets[k];
+		}
+		this.step++;
+	}
+
+
+	//объект "Пуля", принимает канвас, координаты и угол отклонения от вертикали(?)
+	function Bullet(ctx,x,y,zeroAngle){
+		this.x = x;
+		this.y = y;
+		this.zeroAngle = zeroAngle;
+		this.ctx = ctx;
+		this.alpha = zeroAngle;
+		//кэшируем изображение пульки, чтобы копировать её на холст, а не рисовать
+		var m_canvas = document.createElement('canvas');
+		m_canvas.width = 20;
+		m_canvas.height = 20;
+		var m_context = m_canvas.getContext('2d');
+		m_context.beginPath();
+		m_context.arc(10, 10, 4, 0, 2 * Math.PI, false);
+		m_context.lineWidth = 1;
+	    m_context.strokeStyle = 'black';
+		m_context.stroke();
+		m_context.fillStyle = 'red';
+		m_context.fill();
+		m_context.closePath();
+		this.image = m_canvas;
+		this.lastWall = null;
+	}
+
+	//функция "полет пули"
+	Bullet.prototype.fly = function()
+	{
+		g_step = 3;
+		this.y += g_step*Math.cos(this.alpha);
+		this.x += g_step*Math.sin(this.alpha);
+
+		//if(Math.round(this.y) >= wall.begin_y-10 && Math.round(this.x) >= wall.begin_x-5 && Math.round(this.x) <= wall.end_x-5)
+			//this.alpha = Math.PI-this.zeroAngle*2;
+
+		//проверяем на столкновение со стенами
+		for (var i_wall in v_Fence.walls)
+		{
+			var cur_wall = v_Fence.walls[i_wall];
+			var diff = Math.abs(this.y - (cur_wall.k*this.x + cur_wall.b));
+
+			//сложная математика столкновений и отражений (к тому же плохо работающая :)
+			if (diff <= 6 && this.x <= cur_wall.max_x && this.x >= cur_wall.min_x && this.y <= cur_wall.max_y && this.y >= cur_wall.min_y
+				&& this.lastWall != cur_wall)
+			{
+
+				//this.alpha = Math.PI-this.zeroAngle*2;
+				if (this.alpha > Math.PI/2)
+					this.alpha = -Math.PI-cur_wall.phi-this.alpha;
+				else
+					this.alpha = Math.PI-cur_wall.phi-this.alpha;
+
+
+				var abs_alpha = Math.abs(this.alpha);
+
+				if (abs_alpha>g_PI2)
+				{
+					this.alpha = sgn(this.alpha)*(abs_alpha - g_PI2*Math.floor(abs_alpha/g_PI2));
+				}
+
+				this.lastWall = cur_wall;
+
+			}
+		}
+	}
+
+	//функция-рисовалка пули
+	Bullet.prototype.draw = function()
+	{
+		this.ctx.drawImage(this.image, this.x, this.y);
+	}
+
+	//объект "Стена"
+	function Wall(ctx, begin_x, begin_y, end_x, end_y){
+		this.ctx = ctx;
+		this.begin_x = begin_x;
+		this.begin_y = begin_y;
+		this.end_x = end_x;
+		this.end_y = end_y;
+
+		//y = kx + b
+		this.k = (end_y-begin_y)/(end_x-begin_x);
+
+		this.b = begin_y - ((end_y-begin_y)/(end_x-begin_x))*begin_x;
+
+		this.phi = Math.atan(this.k);
+		console.log(this.phi);
+
+		if(begin_x > end_x)
+		{
+			this.max_x = begin_x;
+			this.min_x = end_x;
+		}
+		else
+		{
+			this.max_x = end_x;
+			this.min_x = begin_x;
+		}
+			
+		if(begin_y > end_y)
+		{
+			this.max_y = begin_y;
+			this.min_y = end_y;
+		}
+		else
+		{
+			this.max_y = end_y;
+			this.min_y = begin_y;
+		}
+
+	}
+
+	//функция-рисовалка стены
+	Wall.prototype.draw = function(){
+		this.ctx.beginPath();
+		this.ctx.moveTo(this.begin_x, this.begin_y);
+		this.ctx.lineTo(this.end_x, this.end_y);
+		this.ctx.lineWidth = 10;
+	    this.ctx.strokeStyle = 'red';
+		this.ctx.stroke();
+		this.ctx.closePath();
+	}
+
+	//Объект хранилище стен "Забор"
+	function Fence(){
+		this.walls = [];
+	}
+
+	//функция-рисовалка забора
+	Fence.prototype.draw = function(){
+		for (var i_wall in this.walls)
+		{
+			this.walls[i_wall].draw();
+		}
+	}
+
+	//Объект - потенциальный забор (синглтон, т.к. всегда один)
+	var GhostWall2 = new function() {
+         var instance;
+ 
+        // Конструктор
+        function GhostWall2(ctx) {
+                if ( !instance )
+                        instance = this;
+                else return instance;
+
+                this.ctx = ctx;
+				this.begin_x = 0;
+				this.begin_y = 0;
+				this.end_x = 0;
+				this.end_y = 0;
+        }
+
+
+ 		//функции для задания начала и конца
+		GhostWall2.prototype.changeEnd = function(x,y)
+		{
+			this.end_x = x;
+			this.end_y = y;
+		}
+
+		GhostWall2.prototype.changeBegin = function(x,y)
+		{
+			this.begin_x = x;
+			this.begin_y = y;
+		}
+
+		//функция для рисования
+        GhostWall2.prototype.draw = function()
+        {
+        	this.ctx.beginPath();
+			this.ctx.moveTo(this.begin_x, this.begin_y);
+			this.ctx.lineTo(this.end_x, this.end_y);
+			this.ctx.lineWidth = 5;
+		    this.ctx.strokeStyle = 'black';
+			this.ctx.stroke();
+			this.ctx.closePath();
+        }
+
+        return GhostWall2;
+	};
+
+
+	//начала всея
+	function init(){
+		//создаем обойму
+		var b = new Charger(20,10,context, 400, 0);
+		var i=0;
+		//запускаем пальбу
+		var timer = setInterval(function() {
+			context.clearRect(0, 0, context.canvas.width, context.canvas.height);
+			b.fire();
+			v_Fence.draw();
+			//если пользователь пытается поставить стену, рисуем псевдо-стену по перемещению курсора
+			if (knots==1)
+				ghstWll.draw();
+			i++;
+			//if (i>900)
+		 		//clearInterval(timer);
+		 }, 20);
+		return timer;
+		
+	}
+
+	//кучка глобалов =(
+	var wall;
+
+	var canvas = document.getElementById('action_cvs');
+	var context = canvas.getContext('2d');
+	var centerX = canvas.width / 2;
+	var centerY = canvas.height / 2;
+	var tick = init();
+
+
+	var v_Fence = new Fence();
+	var knots = 0;
+	var oldCoords;
+
+
+	var ghstWll = new GhostWall2(context);
+
+
+	//кликнул по канвасу - начал рисовать забор
+	canvas.onclick=function(e){
+		//context.clearRect(0, 0, context.canvas.width, context.canvas.height)
+		//clearInterval(tick);
+		//tick = init();
+
+		var coords = {
+			x: e.pageX - this.offsetLeft,
+            y: e.pageY - this.offsetTop
+		};
+
+		//если это первая точка
+		if(knots == 0)
+		{
+			oldCoords = coords;
+			ghstWll.changeBegin(coords.x,coords.y);
+			knots++;
+		}
+		//если это вторая (последняя) точка, строим стенку
+		else
+		{
+			var wall = new Wall(context,oldCoords.x,oldCoords.y,coords.x,coords.y);
+			v_Fence.walls.push(wall);
+			knots = 0;
+		}
+
+	};
+
+	//всегда когда мы перемещаем мышь по канвасу, мы пытаемся дорисовать конец забора
+	canvas.onmousemove=function(e)
+	{
+		var coords = {
+			x: e.pageX - this.offsetLeft,
+            y: e.pageY - this.offsetTop
+		};
+		ghstWll.changeEnd(coords.x,coords.y);
+	}
+
+	//вспомогательная функция определения знака числа
+	function sgn(x) {
+	  return (x > 0) - (x < 0);
+	};
+
+
+	</script>
+</body></html>
